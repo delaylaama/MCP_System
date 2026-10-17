@@ -1,0 +1,3 @@
+Meeting Minutes - March 2026 Team Standup
+Attendees: Alex, Sarah, Thejas, Elena.
+Topics discussed: Local vector database performance, LanceDB migration, OAuth refresh tokens for cloud drives.

@@ -1,0 +1,2 @@
+Curriculum Vitae - Academic Researcher
+Publications in neural information retrieval, reciprocal rank fusion, and multimodal machine learning models.
