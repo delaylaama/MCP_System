@@ -26,6 +26,25 @@ export default function AISearch() {
 
         {/* Tips panel */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Model Benchmark Lab Card */}
+          <div className="card-base" style={{ padding: '20px', background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.7) 100%)', border: '1px solid rgba(99, 102, 241, 0.3)' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <i className="bi bi-speedometer2" style={{ color: '#818cf8' }} />
+              5-Model Benchmark Lab
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5, marginBottom: 12 }}>
+              Compare all 5 open-source embedding models side-by-side with latency profiling, accuracy percentages, and architecture breakdowns.
+            </p>
+            <button
+              onClick={() => window.open('/models', '_blank', 'width=1320,height=920,menubar=no,toolbar=no,location=no,status=no')}
+              className="btn-primary-custom"
+              style={{ width: '100%', fontSize: 12, padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+            >
+              <i className="bi bi-box-arrow-up-right" />
+              Open Lab in Separate Window
+            </button>
+          </div>
+
           <div className="card-base" style={{ padding: '20px' }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
               <i className="bi bi-lightbulb" style={{ color: '#f59e0b' }} />
@@ -51,12 +70,12 @@ export default function AISearch() {
               Quick Searches
             </div>
             {[
-              'Find my latest resume',
-              'Show invoices from June',
-              'Find my internship documents',
-              'Show files modified last week',
-              'Find project reports',
-              'Show my certificates',
+              'Find my fees in local drive',
+              'Search for thejas in google drive',
+              'Show invoices in onedrive',
+              'Find resume in local drive under folder Downloads',
+              'Show PDF documents in dropbox',
+              'Find project reports across all drives',
             ].map((q) => (
               <button
                 key={q}

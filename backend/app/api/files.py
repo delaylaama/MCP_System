@@ -18,9 +18,11 @@ router = APIRouter(prefix="/files", tags=["Files"])
 
 
 def _extract_provider_and_native_id(file_id: str) -> tuple[str, str]:
-    """Helper decomposing internal ID prefix (e.g. 'local_...', 'gdrive_...')."""
+    """Helper decomposing internal ID prefix (e.g. 'local_...', 'gdrive_...', 'google_drive_...')."""
     if file_id.startswith("local_"):
         return "local", file_id.removeprefix("local_")
+    elif file_id.startswith("google_drive_"):
+        return "google_drive", file_id.removeprefix("google_drive_")
     elif file_id.startswith("gdrive_"):
         return "google_drive", file_id.removeprefix("gdrive_")
     elif file_id.startswith("onedrive_"):

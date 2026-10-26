@@ -23,25 +23,42 @@ class SearchService:
     async def execute_search(self, user_id: str, request: SearchRequest) -> SearchResponse:
         logger.info(f"Executing search for user {user_id}: '{request.query}'")
 
+        # 0. Natural Language Entity & Location Extraction
+        from backend.app.utils.query_parser import parse_natural_language_query
+        nlp = parse_natural_language_query(request.query)
+        effective_providers = request.providers or ([nlp["provider"]] if nlp["provider"] else None)
+        effective_file_type = request.file_type or nlp["file_type"]
+        effective_query = nlp["clean_target"]
+        effective_folder = nlp["folder"]
+
         # 1. AI Intent & MCP Tool Calling
         if request.use_ai:
             ai_output = await ai_service.process_query(
                 query=request.query,
-                context={"user_id": user_id, "providers": request.providers, "file_type": request.file_type},
+                context={"user_id": user_id, "providers": effective_providers, "file_type": effective_file_type},
             )
             raw_candidates = ai_output.get("results", [])
             interpreted_intent = ai_output.get("intent")
             ai_summary = ai_output.get("ai_summary")
         else:
             from backend.app.mcp.client import mcp_client
-            tool_args = {"query": request.query, "user_id": user_id}
-            if request.providers and len(request.providers) == 1:
-                tool_args["provider"] = request.providers[0]
-            if request.file_type:
-                tool_args["file_type"] = request.file_type
+            tool_args = {"query": effective_query, "user_id": user_id}
+            if effective_providers and len(effective_providers) == 1:
+                tool_args["provider"] = effective_providers[0]
+            if effective_file_type:
+                tool_args["file_type"] = effective_file_type
             raw_candidates = await mcp_client.call_tool("search_files", tool_args)
-            interpreted_intent = {"action": "search_files", "parameters": tool_args}
-            ai_summary = "Direct keyword search executed via MCP."
+            interpreted_intent = {
+                "action": "search_files",
+                "parameters": tool_args,
+                "natural_language_breakdown": {
+                    "target_file": effective_query,
+                    "target_provider": effective_providers[0] if (effective_providers and len(effective_providers) == 1) else "all_providers",
+                    "target_folder": effective_folder,
+                    "file_type": effective_file_type,
+                },
+            }
+            ai_summary = f"Direct search for '{effective_query}' executed via MCP."
 
         # Convert raw dictionaries to FileRecord objects
         if isinstance(raw_candidates, dict):
@@ -63,9 +80,9 @@ class SearchService:
         try:
             db_candidates = await self.file_repo.search_user_files(
                 user_id=user_id,
-                query=request.query,
-                providers=request.providers,
-                file_type=request.file_type,
+                query=effective_query,
+                providers=effective_providers,
+                file_type=effective_file_type,
             )
             existing_ids = {c.id for c in candidate_records}
             existing_keys = {(c.provider, c.name.lower(), c.size) for c in candidate_records}

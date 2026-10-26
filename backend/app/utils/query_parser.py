@@ -114,3 +114,88 @@ def compute_term_match(terms: List[str], text: str) -> Tuple[bool, float]:
         is_hit = coverage >= 0.60
 
     return is_hit, coverage
+
+
+# Regex Patterns for Natural Language Entity Extraction
+PROVIDER_PATTERNS = [
+    (re.compile(r"\b(?:in|on|from|across|inside)?\s*(?:my\s*)?google[\s_-]?drive\b", re.IGNORECASE), "google_drive"),
+    (re.compile(r"\b(?:in|on|from|across|inside)?\s*(?:my\s*)?gdrive\b", re.IGNORECASE), "google_drive"),
+    (re.compile(r"\b(?:in|on|from|across|inside)?\s*(?:my\s*)?one[\s_-]?drive\b", re.IGNORECASE), "onedrive"),
+    (re.compile(r"\b(?:in|on|from|across|inside)?\s*(?:my\s*)?dropbox\b", re.IGNORECASE), "dropbox"),
+    (re.compile(r"\b(?:in|on|from|across|inside)?\s*(?:my\s*)?(?:local[\s_-]?(?:drive|disk|storage)?|this drive|pc|system|local)\b", re.IGNORECASE), "local"),
+]
+
+FOLDER_PATTERNS = [
+    re.compile(r"\b(?:in|inside|under|from)\s+(?:the\s+)?(?:folder|directory|path|subfolder)\s+['\"]?([a-zA-Z0-9_\-\.\/]+)['\"]?", re.IGNORECASE),
+    re.compile(r"\b(?:folder|directory|path):\s*['\"]?([a-zA-Z0-9_\-\.\/]+)['\"]?", re.IGNORECASE),
+]
+
+FILE_TYPE_PATTERNS = [
+    (re.compile(r"\b(?:pdf|pdfs|acrobat)\b", re.IGNORECASE), "pdf"),
+    (re.compile(r"\b(?:word|docx?|document|documents)\b", re.IGNORECASE), "docx"),
+    (re.compile(r"\b(?:excel|spreadsheets?|xlsx?|sheets?)\b", re.IGNORECASE), "xlsx"),
+    (re.compile(r"\bcsv\b", re.IGNORECASE), "csv"),
+    (re.compile(r"\b(?:images?|photos?|pictures?|png|jpg|jpeg)\b", re.IGNORECASE), "image"),
+    (re.compile(r"\b(?:python|scripts?|py|code)\b", re.IGNORECASE), "py"),
+]
+
+
+def parse_natural_language_query(query: str) -> dict:
+    """
+    Parses conversational queries to isolate target files, storage locations, folders, and extensions.
+    Example: 'search for fees in google drive under folder 2026'
+    -> clean_target: 'fees', provider: 'google_drive', folder: '2026'
+    """
+    if not query:
+        return {
+            "raw_query": "",
+            "clean_target": "*",
+            "provider": None,
+            "folder": None,
+            "file_type": None,
+            "terms": [],
+        }
+
+    q_work = query
+    detected_provider = None
+    detected_folder = None
+    detected_type = None
+
+    # 1. Detect target storage provider
+    for pat, p_id in PROVIDER_PATTERNS:
+        match = pat.search(q_work)
+        if match:
+            detected_provider = p_id
+            q_work = pat.sub(" ", q_work)
+            break
+
+    # 2. Detect location folder/path
+    for pat in FOLDER_PATTERNS:
+        match = pat.search(q_work)
+        if match:
+            detected_folder = match.group(1).strip()
+            q_work = pat.sub(" ", q_work)
+            break
+
+    # 3. Detect file type
+    for pat, ext in FILE_TYPE_PATTERNS:
+        match = pat.search(q_work)
+        if match:
+            detected_type = ext
+            break
+
+    # 4. Clean keywords without carrier verbs or provider tokens
+    terms = extract_terms(q_work, keep_recency=False)
+    provider_words = {"google", "drive", "gdrive", "onedrive", "dropbox", "local", "disk", "pc", "folder", "directory"}
+    final_terms = [t for t in terms if t.lower() not in provider_words]
+    clean_target = " ".join(final_terms) if final_terms else clean_query_text(q_work)
+
+    return {
+        "raw_query": query,
+        "clean_target": clean_target.strip() or "*",
+        "provider": detected_provider,
+        "folder": detected_folder,
+        "file_type": detected_type,
+        "terms": final_terms,
+    }
+

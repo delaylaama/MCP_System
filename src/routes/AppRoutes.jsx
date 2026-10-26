@@ -13,6 +13,7 @@ import Favorites from '../pages/Favorites';
 import FileDetails from '../pages/FileDetails';
 import Settings from '../pages/Settings';
 import Admin from '../pages/Admin';
+import ModelLab from '../pages/ModelLab';
 
 export default function AppRoutes() {
   return (
@@ -27,6 +28,7 @@ export default function AppRoutes() {
       <Route element={<PrivateRoute />}>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/ai-search" element={<AISearch />} />
+        <Route path="/models" element={<ModelLab />} />
         <Route path="/files" element={<Files />} />
         <Route path="/storage" element={<Storage />} />
         <Route path="/recent" element={<Recent />} />

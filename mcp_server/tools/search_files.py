@@ -69,12 +69,36 @@ async def search_files_tool(
         except Exception:
             pass
 
-    records: List[FileRecord] = await provider_manager.search_all(
-        query=query,
-        target_providers=eff_sources,
-        filters=filters,
-        credentials_map=credentials_map,
-    )
+    records: List[FileRecord] = []
+    try:
+        import asyncio
+        records = await asyncio.wait_for(
+            provider_manager.search_all(
+                query=query,
+                target_providers=eff_sources,
+                filters=filters,
+                credentials_map=credentials_map,
+            ),
+            timeout=2.0,
+        )
+    except Exception:
+        pass
+
+    if not records and user_id:
+        try:
+            from backend.app.core.database import AsyncSessionLocal
+            from backend.app.repositories.file_repository import FileRepository
+            async with AsyncSessionLocal() as session:
+                file_repo = FileRepository(session)
+                records = await file_repo.search_user_files(
+                    user_id=user_id,
+                    query=query,
+                    providers=eff_sources,
+                    file_type=eff_types[0] if eff_types else None,
+                    limit=limit,
+                )
+        except Exception:
+            pass
 
     if sort in ("modified_desc", "latest", "recent"):
         records.sort(key=lambda r: str(r.modified_at or ""), reverse=True)

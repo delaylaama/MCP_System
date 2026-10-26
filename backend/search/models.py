@@ -30,6 +30,14 @@ class ModelManager:
         return cls._instance
 
     @property
+    def device(self) -> str:
+        try:
+            import torch
+            return "cuda" if torch.cuda.is_available() else "cpu"
+        except Exception:
+            return "cpu"
+
+    @property
     def is_ready(self) -> bool:
         local_path = MODELS_DIR / TEXT_MODEL_NAME
         return local_path.exists() or self._text_model is not None
@@ -40,10 +48,11 @@ class ModelManager:
             try:
                 from sentence_transformers import SentenceTransformer
                 local_path = MODELS_DIR / TEXT_MODEL_NAME
+                dev = self.device
                 if local_path.exists():
-                    self._text_model = SentenceTransformer(str(local_path))
+                    self._text_model = SentenceTransformer(str(local_path), device=dev)
                 else:
-                    self._text_model = SentenceTransformer(TEXT_MODEL_NAME, cache_folder=str(MODELS_DIR))
+                    self._text_model = SentenceTransformer(TEXT_MODEL_NAME, cache_folder=str(MODELS_DIR), device=dev)
             except Exception as e:
                 logger.warning(f"Could not load local text model: {e}")
         return self._text_model
@@ -54,10 +63,12 @@ class ModelManager:
             try:
                 import open_clip
                 clip_dir = MODELS_DIR / "open_clip"
+                dev = self.device
                 self._clip_model, _, self._clip_preprocess = open_clip.create_model_and_transforms(
                     CLIP_MODEL_NAME,
                     pretrained=CLIP_PRETRAINED,
                     cache_dir=str(clip_dir) if clip_dir.exists() else None,
+                    device=dev,
                 )
                 self._clip_tokenizer = open_clip.get_tokenizer(CLIP_MODEL_NAME)
                 self._clip_model.eval()
@@ -84,7 +95,8 @@ class ModelManager:
             return None
         try:
             import torch
-            tokens = tokenizer([text])
+            dev = self.device
+            tokens = tokenizer([text]).to(dev)
             with torch.no_grad():
                 emb = model.encode_text(tokens)
                 emb /= emb.norm(dim=-1, keepdim=True)
@@ -101,12 +113,13 @@ class ModelManager:
         try:
             from PIL import Image
             import torch
+            dev = self.device
             if isinstance(image_input, (str, bytes)):
                 image = Image.open(image_input).convert("RGB")
             else:
                 image = image_input.convert("RGB")
 
-            tensor = preprocess(image).unsqueeze(0)
+            tensor = preprocess(image).unsqueeze(0).to(dev)
             with torch.no_grad():
                 emb = model.encode_image(tensor)
                 emb /= emb.norm(dim=-1, keepdim=True)

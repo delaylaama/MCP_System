@@ -1,6 +1,7 @@
 """Real Microsoft OneDrive Provider Adapter using Microsoft Graph API v1.0."""
 
 import httpx
+import time
 from datetime import datetime
 from typing import List, Optional, Tuple, Dict, Any
 from backend.app.providers.base import BaseProvider
@@ -8,6 +9,7 @@ from backend.app.schemas.file import FileRecord
 from backend.app.core.logging import logger
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+_onedrive_failed_tokens: Dict[str, float] = {}
 
 
 class OneDriveProvider(BaseProvider):
@@ -102,23 +104,26 @@ class OneDriveProvider(BaseProvider):
         filters: Optional[Dict[str, Any]] = None,
         credentials: Optional[Dict[str, Any]] = None,
     ) -> List[FileRecord]:
+        token = (credentials or {}).get("access_token", "")
+        if not token or token.startswith("instant_sandbox_"):
+            return []
+        if token in _onedrive_failed_tokens and (time.time() - _onedrive_failed_tokens[token] < 300):
+            return []
+
         try:
             if not query or query.strip() == "*":
                 return await self.list_files(credentials=credentials, limit=50)
 
             headers = self._get_headers(credentials)
-            async with httpx.AsyncClient(timeout=20.0) as client:
+            async with httpx.AsyncClient(timeout=2.5) as client:
                 url = f"{GRAPH_BASE}/me/drive/root/search(q='{query}')"
                 response = await client.get(url, headers=headers)
                 if response.status_code == 401:
-                    new_token = await self._refresh_token(credentials)
-                    if new_token:
-                        headers = self._get_headers(credentials)
-                        response = await client.get(url, headers=headers)
+                    _onedrive_failed_tokens[token] = time.time()
+                    return []
 
                 if response.status_code != 200:
-                    logger.warning(f"OneDrive search returned {response.status_code}, falling back to list_files")
-                    return await self.list_files(credentials=credentials, limit=50)
+                    return []
 
                 data = response.json()
                 items = data.get("value", [])
@@ -130,6 +135,8 @@ class OneDriveProvider(BaseProvider):
 
                 return results
         except Exception as e:
+            if "401" in str(e) or "unauthorized" in str(e).lower():
+                _onedrive_failed_tokens[token] = time.time()
             logger.warning(f"OneDrive search error: {e}")
             return []
 

@@ -1,6 +1,7 @@
 """Local Filesystem Provider Adapter with system drives support and sandboxed access."""
 
 import os
+import asyncio
 import string
 import shutil
 import ctypes
@@ -120,7 +121,7 @@ class LocalFileProvider(BaseProvider):
         except Exception:
             return ""
 
-    def _to_file_record(self, file_path: Path) -> FileRecord:
+    def _to_file_record(self, file_path: Path, compute_hash: bool = False) -> FileRecord:
         try:
             rel_path = file_path.relative_to(self.root_path).as_posix()
             file_id_key = rel_path
@@ -147,7 +148,7 @@ class LocalFileProvider(BaseProvider):
             mime_type = "application/octet-stream"
 
         ext = file_path.suffix.lower() if not is_dir else ""
-        content_hash = self._compute_hash(file_path) if not is_dir and size < 50_000_000 else None
+        content_hash = self._compute_hash(file_path) if compute_hash and not is_dir and size < 10_000_000 else None
 
         return FileRecord(
             id=f"local_{file_id_key}",
@@ -309,9 +310,14 @@ class LocalFileProvider(BaseProvider):
         filters: Optional[Dict[str, Any]] = None,
         credentials: Optional[Dict[str, Any]] = None,
     ) -> List[FileRecord]:
-        import re
-        import difflib
+        return await asyncio.to_thread(self._sync_search_files, query, filters)
 
+    def _sync_search_files(
+        self,
+        query: str,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> List[FileRecord]:
+        import re
         from backend.app.utils.query_parser import extract_terms, compute_term_match, clean_query_text
 
         query_lower = query.lower().strip()
@@ -321,34 +327,44 @@ class LocalFileProvider(BaseProvider):
         modified_after = filters.get("modified_after") if filters else None
         modified_before = filters.get("modified_before") if filters else None
 
-        # Gather search directories: project local_storage + user folders (Downloads, Documents, Desktop, Pictures, Videos, Music)
-        search_dirs = [(self.root_path, 99)]
-        home = Path.home()
-        for folder_name in ["Downloads", "Documents", "Desktop", "Pictures", "Videos", "Music"]:
-            folder_path = home / folder_name
-            if folder_path.exists() and folder_path.is_dir() and folder_path != self.root_path:
-                search_dirs.append((folder_path, 4))
-
-        results = []
-        seen_paths = set()
-
         is_wildcard = (
             not query_lower
             or query_lower in ["*", "all", "all files", "local", "local storage", "local_storage", "local files"]
         )
 
+        # For wildcard queries, search local_storage root directly
+        search_dirs = [(self.root_path, 99)]
+        if not is_wildcard:
+            home = Path.home()
+            for folder_name in ["Downloads", "Documents", "Desktop"]:
+                folder_path = home / folder_name
+                if folder_path.exists() and folder_path.is_dir() and folder_path != self.root_path:
+                    search_dirs.append((folder_path, 2))
+
+        results = []
+        seen_paths = set()
+
         for base_dir, max_depth in search_dirs:
+            if len(results) >= 50:
+                break
             for root, dirs, files in os.walk(base_dir):
+                if len(results) >= 50:
+                    break
                 # Prune non-user/hidden folders
                 dirs[:] = [
                     d for d in dirs
                     if not d.startswith((".", "$")) and d not in ["System Volume Information", "node_modules", "venv", "env", "AppData", "__pycache__"]
                 ]
-                rel_parts = Path(root).relative_to(base_dir).parts
-                if len(rel_parts) >= max_depth:
-                    dirs.clear()
+                try:
+                    rel_parts = Path(root).relative_to(base_dir).parts
+                    if len(rel_parts) >= max_depth:
+                        dirs.clear()
+                except ValueError:
+                    pass
 
                 for file_name in files:
+                    if len(results) >= 50:
+                        break
                     if file_name.startswith((".", "$")):
                         continue
                     file_path = Path(root) / file_name
@@ -364,8 +380,8 @@ class LocalFileProvider(BaseProvider):
 
                     q_compact = re.sub(r"[^a-z0-9]", "", query_lower)
                     f_compact = re.sub(r"[^a-z0-9]", "", file_name.lower())
-
                     file_clean = re.sub(r"[_\-\s]+", " ", file_name.lower())
+
                     name_match = False
                     if is_wildcard:
                         name_match = True
@@ -377,15 +393,15 @@ class LocalFileProvider(BaseProvider):
                             name_match = True
 
                     content_match = False
-                    if not name_match and file_path.suffix.lower() in [".txt", ".md", ".json", ".csv", ".py"]:
+                    if not name_match and not is_wildcard and file_path.suffix.lower() in [".txt", ".md", ".json", ".csv", ".py"]:
                         try:
-                            if file_path.stat().st_size < 1_000_000:
+                            if file_path.stat().st_size < 100_000:
                                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                                    c = f.read().lower()
+                                    c = f.read(50000).lower()
                                     if query_clean and query_clean in c:
                                         content_match = True
                                     else:
-                                        is_hit, coverage = compute_term_match(query_terms, c)
+                                        is_hit, _ = compute_term_match(query_terms, c)
                                         if is_hit:
                                             content_match = True
                         except Exception:
@@ -393,7 +409,7 @@ class LocalFileProvider(BaseProvider):
 
                     if name_match or content_match:
                         try:
-                            record = self._to_file_record(file_path)
+                            record = self._to_file_record(file_path, compute_hash=False)
                             if modified_after and record.modified_at and record.modified_at < modified_after:
                                 continue
                             if modified_before and record.modified_at and record.modified_at > modified_before:

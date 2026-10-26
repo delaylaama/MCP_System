@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { listProviders, connectProvider, disconnectProvider, getLocalDrives } from '../services/providerService';
+import { listProviders, connectProvider, connectProviderInstant, disconnectProvider, getLocalDrives } from '../services/providerService';
 import StorageCard from '../components/StorageCard';
 import ConnectStorageModal from '../components/ConnectStorageModal';
 import LocalDriveExplorerModal from '../components/LocalDriveExplorerModal';
@@ -16,22 +16,74 @@ export default function Storage() {
   const [exploreLocalModal, setExploreLocalModal] = useState(false);
   const [detailsModalProvider, setDetailsModalProvider] = useState(null);
 
-  useEffect(() => {
-    let isMounted = true;
-    Promise.all([listProviders(), getLocalDrives()])
+  const loadData = () => {
+    return Promise.all([listProviders(), getLocalDrives()])
       .then(([provData, drivesData]) => {
-        if (!isMounted) return;
         if (provData && provData.length > 0) setProviders(provData);
         if (drivesData && drivesData.length > 0) setSystemDrives(drivesData);
       })
       .catch((err) => {
         console.warn('Error loading storage providers:', err);
       });
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    loadData();
+
+    // Check for OAuth callback redirects
+    const params = new URLSearchParams(window.location.search);
+    const success = params.get('success');
+    const error = params.get('error');
+
+    if (success) {
+      const names = {
+        google_drive: 'Google Drive',
+        onedrive: 'Microsoft OneDrive',
+        dropbox: 'Dropbox',
+        local: 'Local Storage',
+      };
+      toast.success(`${names[success] || success} connected successfully!`);
+      window.history.replaceState({}, document.title, window.location.pathname);
+      loadData();
+    } else if (error) {
+      toast.error(`Connection failed: ${error.replace(/_/g, ' ')}`);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
     return () => { isMounted = false; };
   }, []);
 
   const handleConnect = (provider) => {
     setConnectModal(provider);
+  };
+
+  const handleInstantConnect = async (provider) => {
+    try {
+      const res = await connectProviderInstant(provider.id);
+      setProviders((prev) =>
+        prev.map((p) =>
+          p.id === provider.id
+            ? {
+                ...p,
+                connected: true,
+                fileCount: res.file_count,
+                usedStorage: res.used_storage,
+                totalStorage: res.total_storage,
+                usedPercent: res.used_percent,
+                account_identifier: res.account_identifier,
+                lastSync: 'Just now',
+              }
+            : p
+        )
+      );
+      toast.success(`${provider.name} connected instantly with demo documents!`);
+      loadData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to instant connect.');
+    } finally {
+      setConnectModal(null);
+    }
   };
 
   const handleConfirmConnect = async (provider) => {
@@ -41,21 +93,25 @@ export default function Storage() {
           prev.map((p) => (p.id === provider.id ? { ...p, connected: true } : p))
         );
         toast.success(`${provider.name} connected successfully!`);
+        setConnectModal(null);
       } else {
+        toast.loading(`Contacting ${provider.name}...`, { id: 'cloud-connect' });
         const res = await connectProvider(provider.id);
         if (res?.authorization_url) {
+          toast.success(`Redirecting to ${provider.name} sign-in...`, { id: 'cloud-connect' });
           window.location.href = res.authorization_url;
           return;
         } else {
+          toast.dismiss('cloud-connect');
           setProviders((prev) =>
             prev.map((p) => (p.id === provider.id ? { ...p, connected: true } : p))
           );
           toast.success(`${provider.name} connected successfully!`);
+          setConnectModal(null);
         }
       }
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to initiate connection.');
-    } finally {
+      toast.error(err.response?.data?.detail || 'Failed to initiate connection.', { id: 'cloud-connect' });
       setConnectModal(null);
     }
   };
@@ -217,6 +273,7 @@ export default function Storage() {
         <ConnectStorageModal
           provider={connectModal}
           onConfirm={handleConfirmConnect}
+          onInstantConfirm={handleInstantConnect}
           onClose={() => setConnectModal(null)}
         />
       )}

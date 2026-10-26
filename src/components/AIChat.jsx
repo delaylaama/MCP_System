@@ -2,16 +2,18 @@ import React, { useState, useRef, useEffect } from 'react';
 import { search as apiSearch } from '../services/searchService';
 import SearchResult from './SearchResult';
 import LoadingSpinner from './LoadingSpinner';
+import ModelComparisonModal from './ModelComparisonModal';
 
 const suggestions = [
-  'Find my latest resume',
-  'Show invoices from June',
-  'Find my final year fees',
-  'Show files modified last week',
+  'Find my fees in local drive',
+  'Search for thejas in google drive',
+  'Show invoices in onedrive',
+  'Find resume in local drive under folder Downloads',
 ];
 
-function Message({ role, content, results, loading, showRelevance, onToggleRelevance }) {
+function Message({ role, content, results, loading, showRelevance, onToggleRelevance, onOpenComparison }) {
   const isUser = role === 'user';
+
   return (
     <div className={`chat-message-row ${isUser ? 'user' : ''}`}>
       <div className={`chat-avatar ${isUser ? 'user' : 'ai'}`}>
@@ -49,52 +51,78 @@ function Message({ role, content, results, loading, showRelevance, onToggleRelev
                       <span><strong>{results.length}</strong> matching file{results.length !== 1 ? 's' : ''} retrieved</span>
                     </div>
 
-                    {/* Master Switch: Explain Relevance */}
-                    <button
-                      type="button"
-                      onClick={onToggleRelevance}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        background: showRelevance ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.04)',
-                        border: showRelevance ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid var(--color-border)',
-                        color: showRelevance ? '#60a5fa' : 'var(--color-text-muted)',
-                        padding: '4px 10px',
-                        borderRadius: 16,
-                        cursor: 'pointer',
-                        fontSize: 11.5,
-                        fontWeight: 600,
-                        transition: 'all 0.2s ease',
-                      }}
-                      title="Toggle detailed relevance insights explaining why each file matched"
-                    >
-                      <i className="bi bi-stars" style={{ color: showRelevance ? '#60a5fa' : 'inherit' }} />
-                      <span>Explain Relevance</span>
-                      <div
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {/* Compare 5 Models button */}
+                      <button
+                        type="button"
+                        onClick={() => onOpenComparison && onOpenComparison()}
                         style={{
-                          width: 28,
-                          height: 16,
-                          borderRadius: 8,
-                          background: showRelevance ? '#3b82f6' : 'rgba(255, 255, 255, 0.2)',
-                          position: 'relative',
-                          transition: 'background 0.2s',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.15))',
+                          border: '1px solid rgba(99, 102, 241, 0.4)',
+                          color: '#a5b4fc',
+                          padding: '4px 10px',
+                          borderRadius: 16,
+                          cursor: 'pointer',
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          transition: 'all 0.2s ease',
                         }}
+                        title="Benchmark this search across 5 open-source embedding models"
                       >
+                        <i className="bi bi-speedometer2" style={{ color: '#818cf8' }} />
+                        <span>Compare 5 Models</span>
+                      </button>
+
+                      {/* Master Switch: Explain Relevance */}
+                      <button
+                        type="button"
+                        onClick={onToggleRelevance}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          background: showRelevance ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+                          border: showRelevance ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid var(--color-border)',
+                          color: showRelevance ? '#60a5fa' : 'var(--color-text-muted)',
+                          padding: '4px 10px',
+                          borderRadius: 16,
+                          cursor: 'pointer',
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          transition: 'all 0.2s ease',
+                        }}
+                        title="Toggle detailed relevance insights explaining why each file matched"
+                      >
+                        <i className="bi bi-stars" style={{ color: showRelevance ? '#60a5fa' : 'inherit' }} />
+                        <span>Explain Relevance</span>
                         <div
                           style={{
-                            width: 12,
-                            height: 12,
-                            borderRadius: '50%',
-                            background: 'white',
-                            position: 'absolute',
-                            top: 2,
-                            left: showRelevance ? 14 : 2,
-                            transition: 'left 0.2s',
+                            width: 28,
+                            height: 16,
+                            borderRadius: 8,
+                            background: showRelevance ? '#3b82f6' : 'rgba(255, 255, 255, 0.2)',
+                            position: 'relative',
+                            transition: 'background 0.2s',
                           }}
-                        />
-                      </div>
-                    </button>
+                        >
+                          <div
+                            style={{
+                              width: 12,
+                              height: 12,
+                              borderRadius: '50%',
+                              background: 'white',
+                              position: 'absolute',
+                              top: 2,
+                              left: showRelevance ? 14 : 2,
+                              transition: 'left 0.2s',
+                            }}
+                          />
+                        </div>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Results Grid */}
@@ -131,6 +159,8 @@ export default function AIChat({ initialQuery = '' }) {
   const [showRelevance, setShowRelevance] = useState(() => {
     return localStorage.getItem('ai_fm_explain_relevance') === 'true';
   });
+  const [isComparisonOpen, setIsComparisonOpen] = useState(false);
+  const [comparisonQuery, setComparisonQuery] = useState('');
   const bottomRef = useRef(null);
 
   const toggleRelevance = () => {
@@ -139,6 +169,13 @@ export default function AIChat({ initialQuery = '' }) {
       localStorage.setItem('ai_fm_explain_relevance', String(next));
       return next;
     });
+  };
+
+  const openComparison = (queryOverride) => {
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
+    const target = queryOverride || lastUserMsg?.content || input || initialQuery || 'find my final year fees';
+    setComparisonQuery(target);
+    setIsComparisonOpen(true);
   };
 
   useEffect(() => {
@@ -197,7 +234,7 @@ export default function AIChat({ initialQuery = '' }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 500 }}>
-      {/* Header Bar with Global Explain Relevance Toggle */}
+      {/* Header Bar with Global Explain Relevance & Compare 5 Models buttons */}
       <div
         style={{
           display: 'flex',
@@ -206,6 +243,8 @@ export default function AIChat({ initialQuery = '' }) {
           paddingBottom: 12,
           borderBottom: '1px solid var(--color-border-light)',
           marginBottom: 8,
+          flexWrap: 'wrap',
+          gap: 10,
         }}
       >
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -213,51 +252,107 @@ export default function AIChat({ initialQuery = '' }) {
           <span>Interactive AI Search Session</span>
         </div>
 
-        <button
-          type="button"
-          onClick={toggleRelevance}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            background: showRelevance ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.04)',
-            border: showRelevance ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid var(--color-border)',
-            color: showRelevance ? '#60a5fa' : 'var(--color-text-muted)',
-            padding: '5px 12px',
-            borderRadius: 16,
-            cursor: 'pointer',
-            fontSize: 12,
-            fontWeight: 600,
-            transition: 'all 0.2s ease',
-          }}
-          title="Toggle relevance explanations for all search results"
-        >
-          <i className="bi bi-stars" style={{ color: showRelevance ? '#60a5fa' : 'inherit' }} />
-          <span>Explain Relevance: {showRelevance ? 'ON' : 'OFF'}</span>
-          <div
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {/* Top Bar Compare 5 Models Trigger */}
+          <button
+            type="button"
+            onClick={() => openComparison()}
             style={{
-              width: 32,
-              height: 18,
-              borderRadius: 9,
-              background: showRelevance ? '#3b82f6' : 'rgba(255, 255, 255, 0.2)',
-              position: 'relative',
-              transition: 'background 0.2s',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.2))',
+              border: '1px solid rgba(99, 102, 241, 0.5)',
+              color: '#c7d2fe',
+              padding: '5px 12px',
+              borderRadius: 16,
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 600,
+              transition: 'all 0.2s ease',
+              boxShadow: '0 0 12px rgba(99, 102, 241, 0.2)',
             }}
+            title="Benchmark current query across 5 open-source embedding models"
           >
+            <i className="bi bi-speedometer2" style={{ color: '#a5b4fc' }} />
+            <span>Compare 5 Models</span>
+          </button>
+
+          {/* Separate Window Pop-out */}
+          <button
+            type="button"
+            onClick={() => {
+              const lastUserMsg = messages.filter(m => m.role === 'user').slice(-1)[0]?.content;
+              const q = input.trim() || lastUserMsg || comparisonQuery || 'find my final year fees';
+              window.open(`/models?q=${encodeURIComponent(q)}`, '_blank', 'width=1320,height=920,menubar=no,toolbar=no,location=no,status=no');
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              color: '#93c5fd',
+              padding: '5px 10px',
+              borderRadius: 16,
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 500,
+              transition: 'all 0.2s ease',
+            }}
+            title="Open detailed model breakdown in a separate window"
+          >
+            <i className="bi bi-box-arrow-up-right" style={{ fontSize: 11 }} />
+            <span>Separate Window</span>
+          </button>
+
+          {/* Master Switch: Explain Relevance */}
+          <button
+            type="button"
+            onClick={toggleRelevance}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              background: showRelevance ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+              border: showRelevance ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid var(--color-border)',
+              color: showRelevance ? '#60a5fa' : 'var(--color-text-muted)',
+              padding: '5px 12px',
+              borderRadius: 16,
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 600,
+              transition: 'all 0.2s ease',
+            }}
+            title="Toggle relevance explanations for all search results"
+          >
+            <i className="bi bi-stars" style={{ color: showRelevance ? '#60a5fa' : 'inherit' }} />
+            <span>Explain Relevance: {showRelevance ? 'ON' : 'OFF'}</span>
             <div
               style={{
-                width: 14,
-                height: 14,
-                borderRadius: '50%',
-                background: 'white',
-                position: 'absolute',
-                top: 2,
-                left: showRelevance ? 16 : 2,
-                transition: 'left 0.2s',
+                width: 32,
+                height: 18,
+                borderRadius: 9,
+                background: showRelevance ? '#3b82f6' : 'rgba(255, 255, 255, 0.2)',
+                position: 'relative',
+                transition: 'background 0.2s',
               }}
-            />
-          </div>
-        </button>
+            >
+              <div
+                style={{
+                  width: 14,
+                  height: 14,
+                  borderRadius: '50%',
+                  background: 'white',
+                  position: 'absolute',
+                  top: 2,
+                  left: showRelevance ? 16 : 2,
+                  transition: 'left 0.2s',
+                }}
+              />
+            </div>
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -272,6 +367,7 @@ export default function AIChat({ initialQuery = '' }) {
               loading={m.loading}
               showRelevance={showRelevance}
               onToggleRelevance={toggleRelevance}
+              onOpenComparison={() => openComparison()}
             />
           ))}
           <div ref={bottomRef} />
@@ -333,6 +429,14 @@ export default function AIChat({ initialQuery = '' }) {
           )}
         </button>
       </div>
+
+      {/* 5 Open-Source Models Comparison Modal */}
+      <ModelComparisonModal
+        isOpen={isComparisonOpen}
+        onClose={() => setIsComparisonOpen(false)}
+        initialQuery={comparisonQuery}
+      />
     </div>
   );
 }
+

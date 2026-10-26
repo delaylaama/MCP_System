@@ -130,34 +130,17 @@ class HeuristicReasoningAgent(BaseLLMProvider):
                 "results": list_results,
             }
 
-        # 3. Target provider extraction
-        provider = None
-        if "google drive" in query_lower or "gdrive" in query_lower:
-            provider = "google_drive"
-        elif "onedrive" in query_lower:
-            provider = "onedrive"
-        elif "dropbox" in query_lower:
-            provider = "dropbox"
-        elif "local" in query_lower or "system" in query_lower:
-            provider = "local"
+        # 3. Intelligent Natural Language Entity & Location Parsing
+        from backend.app.utils.query_parser import parse_natural_language_query, is_recency_query
 
+        parsed = parse_natural_language_query(query)
+        provider = parsed["provider"]
         if not provider and context and context.get("providers") and len(context["providers"]) == 1:
             provider = context["providers"][0]
 
-        # 4. File type extraction
-        file_type = context.get("file_type") if context else None
-        if not file_type:
-            for ext in ["pdf", "docx", "doc", "txt", "csv", "xlsx", "md", "png", "jpg", "zip", "py"]:
-                if ext in query_lower:
-                    file_type = ext
-                    break
-
-        # 5. Semantic keyword extraction using NLP query parser
-        from backend.app.utils.query_parser import clean_query_text, is_recency_query
-
-        clean_query = clean_query_text(query)
-        if not clean_query:
-            clean_query = "*"
+        file_type = parsed["file_type"] or (context.get("file_type") if context else None)
+        folder = parsed["folder"]
+        clean_query = parsed["clean_target"]
 
         user_id = context.get("user_id") if context else None
         tool_args = {"query": clean_query}
@@ -173,14 +156,43 @@ class HeuristicReasoningAgent(BaseLLMProvider):
         # Dispatch via MCP Client
         search_results = await mcp_client.call_tool("search_files", tool_args)
 
+        # If a folder was detected, filter / prioritize results containing that folder in path
+        if folder and isinstance(search_results, list):
+            folder_lower = folder.lower()
+            matching_folder = [
+                f for f in search_results
+                if folder_lower in ((f.get("path", "") if isinstance(f, dict) else getattr(f, "path", "")) or "").lower()
+            ]
+            if matching_folder:
+                search_results = matching_folder
+
         count = len(search_results) if isinstance(search_results, list) else 0
+
+        # Construct clear natural language breakdown explanation
+        loc_desc = []
+        if provider:
+            prov_names = {"google_drive": "Google Drive", "onedrive": "OneDrive", "dropbox": "Dropbox", "local": "Local Disk"}
+            loc_desc.append(prov_names.get(provider, provider))
+        if folder:
+            loc_desc.append(f"folder '{folder}'")
+        loc_str = f" in {' / '.join(loc_desc)}" if loc_desc else " across all connected storage"
+
         ai_summary = (
-            f"Understood request for '{clean_query}'. "
-            f"Invoked MCP tool 'search_files' across connected providers and retrieved {count} matching files."
+            f"Natural language analyzed: searching for '{clean_query}'{loc_str}. "
+            f"Retrieved {count} matching file{'' if count == 1 else 's'} via MCP."
         )
 
         return {
-            "intent": {"action": "search_files", "parameters": tool_args},
+            "intent": {
+                "action": "search_files",
+                "parameters": tool_args,
+                "natural_language_breakdown": {
+                    "target_file": clean_query,
+                    "target_provider": provider or "all_providers",
+                    "target_folder": folder,
+                    "file_type": file_type,
+                },
+            },
             "ai_summary": ai_summary,
             "results": search_results if isinstance(search_results, list) else [],
         }

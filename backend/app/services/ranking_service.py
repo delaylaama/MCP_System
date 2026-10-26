@@ -33,11 +33,16 @@ class RankingService:
 
         semantic_scores = semantic_scores or {}
         now = datetime.now(timezone.utc)
-        from backend.app.utils.query_parser import extract_terms, compute_term_match
+        from backend.app.utils.query_parser import parse_natural_language_query, compute_term_match
 
-        query_terms = extract_terms(query, keep_recency=False)
-        query_clean = " ".join(query_terms)
-        query_lower = query.lower().strip()
+        is_wildcard = not query or query.strip() in ["*", "all", "all files"]
+        nlp = parse_natural_language_query(query) if not is_wildcard else {}
+        target_provider = nlp.get("provider")
+        target_folder = nlp.get("folder")
+        target_file_type = nlp.get("file_type")
+        query_terms = nlp.get("terms") or []
+        query_clean = nlp.get("clean_target") or " ".join(query_terms)
+        query_lower = query_clean.lower().strip()
 
         ranked: List[FileRecord] = []
 
@@ -47,22 +52,26 @@ class RankingService:
             path_lower = (record.path or "").lower()
 
             # 1. Exact phrase and term match evaluation
-            q_compact = re.sub(r"[^a-z0-9]", "", query_lower)
-            f_compact = re.sub(r"[^a-z0-9]", "", name_lower)
-
-            is_hit, coverage = compute_term_match(query_terms, f"{name_clean} {path_lower}")
-
-            if (q_compact and q_compact in f_compact) or (query_clean and (query_clean in name_clean or query_clean in path_lower)):
-                exact_score = 1.0
-                coverage = max(coverage, 1.0)
-            elif coverage >= 0.8:
-                exact_score = 0.85
-            elif coverage >= 0.5:
+            if is_wildcard:
                 exact_score = 0.5
-            elif coverage > 0.0 and len(query_terms) == 1:
-                exact_score = 0.4
+                coverage = 1.0
             else:
-                exact_score = 0.0
+                q_compact = re.sub(r"[^a-z0-9]", "", query_lower)
+                f_compact = re.sub(r"[^a-z0-9]", "", name_lower)
+
+                is_hit, coverage = compute_term_match(query_terms, f"{name_clean} {path_lower}")
+
+                if (q_compact and q_compact in f_compact) or (query_clean and (query_clean in name_clean or query_clean in path_lower)):
+                    exact_score = 1.0
+                    coverage = max(coverage, 1.0)
+                elif coverage >= 0.8:
+                    exact_score = 0.85
+                elif coverage >= 0.5:
+                    exact_score = 0.5
+                elif coverage > 0.0 and len(query_terms) == 1:
+                    exact_score = 0.4
+                else:
+                    exact_score = 0.0
 
             # 2. Keyword relevance score based on actual meaningful term coverage
             kw_score = coverage
@@ -85,22 +94,41 @@ class RankingService:
                 except Exception:
                     rec_score = 0.5
 
+            # 5. Natural Language Location & Drive Affinity
+            loc_boost = 0.0
+            if target_provider and record.provider == target_provider:
+                loc_boost += 0.15
+            if target_folder and target_folder.lower() in path_lower:
+                loc_boost += 0.15
+            if target_file_type and record.extension and target_file_type.lower() in record.extension.lower():
+                loc_boost += 0.10
+
             # If the file has 0 keyword coverage AND zero/negligible semantic score (<0.20),
-            # it is completely irrelevant to the query.
-            if kw_score == 0.0 and (sem_score or 0.0) < 0.20 and exact_score == 0.0:
+            # it is completely irrelevant to the query (except wildcard browse queries).
+            if not is_wildcard and kw_score == 0.0 and (sem_score or 0.0) < 0.20 and exact_score == 0.0:
                 continue
 
             # Composite final score
-            final_score = (
+            final_score = min(
+                1.0,
                 self.w_kw * kw_score
                 + self.w_sem * sem_score
                 + self.w_rec * rec_score
                 + self.w_exact * exact_score
+                + loc_boost,
             )
 
             # Build human-readable relevance explanation
             matched_terms = [t for t in query_terms if t in name_clean or t in path_lower]
             reasons = []
+
+            if target_provider and record.provider == target_provider:
+                prov_label = {"google_drive": "Google Drive", "onedrive": "OneDrive", "dropbox": "Dropbox", "local": "Local Disk"}.get(target_provider, target_provider)
+                reasons.append(f"Located in specified storage ({prov_label})")
+
+            if target_folder and target_folder.lower() in path_lower:
+                reasons.append(f"Located in target folder '{target_folder}'")
+
             if query_clean and (query_clean in name_clean or query_clean in path_lower):
                 reasons.append("Exact search phrase match in filename")
             elif exact_score >= 0.8:

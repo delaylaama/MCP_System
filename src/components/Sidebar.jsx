@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 const navItems = [
   { to: '/dashboard', icon: 'bi-grid-1x2', label: 'Dashboard' },
   { to: '/ai-search', icon: 'bi-stars', label: 'AI Search' },
+  { to: '/models', icon: 'bi-speedometer2', label: 'AI Models Lab' },
   { to: '/files', icon: 'bi-folder2-open', label: 'My Files' },
   { to: '/storage', icon: 'bi-cloud-arrow-up', label: 'Storage' },
   { to: '/recent', icon: 'bi-clock-history', label: 'Recent' },

@@ -66,12 +66,21 @@ class ProviderManager:
                 # If cloud provider, only query if credentials exist
                 if name != "local" and name not in credentials_map:
                     continue
+                creds = credentials_map.get(name) or {}
+                if creds.get("access_token", "").startswith("instant_sandbox_"):
+                    # Sandbox accounts are indexed in SQLite - avoid redundant remote HTTP calls
+                    continue
                 provider = self._providers[name]
-                creds = credentials_map.get(name)
-                tasks.append(provider.search_files(query=query, filters=filters, credentials=creds))
+                task = asyncio.wait_for(
+                    provider.search_files(query=query, filters=filters, credentials=creds),
+                    timeout=1.2 if name != "local" else 5.0,
+                )
+                tasks.append(task)
                 queried_names.append(name)
 
         if not tasks:
+            if target_providers and "local" not in target_providers:
+                return []
             # Fallback to local if nothing else configured
             provider = self._providers["local"]
             return await provider.search_files(query=query, filters=filters)

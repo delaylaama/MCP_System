@@ -57,6 +57,17 @@ export async function connectProvider(provider) {
 }
 
 /**
+ * Instantly connects a cloud provider with sandbox files without external OAuth consent restrictions.
+ *
+ * @param {string} provider  Provider key: 'google_drive' | 'onedrive' | 'dropbox'
+ * @returns {Promise<object>} Refreshed provider status
+ */
+export async function connectProviderInstant(provider) {
+  const { data } = await api.post(`/api/providers/${encodeURIComponent(provider)}/connect-instant`);
+  return data;
+}
+
+/**
  * Disconnect a cloud provider — removes OAuth credentials from the backend.
  *
  * @param {string} provider  Provider key

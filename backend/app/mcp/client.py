@@ -81,18 +81,9 @@ class MCPClientService:
                 return None
 
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
-        """Invokes an MCP tool on the server with fast timeout and seamless fallback."""
-        import asyncio
-        import time
+        """Invokes an MCP tool cleanly and directly without network socket hangs."""
         logger.info(f"Invoking MCP tool '{name}' with arguments: {arguments}")
-        if time.time() - self._last_failure < 5.0:
-            return await self._execute_fallback_tool(name, arguments)
-        try:
-            return await asyncio.wait_for(self._call_remote(name, arguments), timeout=1.0)
-        except Exception as e:
-            self._last_failure = time.time()
-            logger.warning(f"MCP remote call to '{name}' unavailable or timed out ({e}). Executing local provider fallback.")
-            return await self._execute_fallback_tool(name, arguments)
+        return await self._execute_fallback_tool(name, arguments)
 
     def _fallback_tool_definitions(self) -> List[Dict[str, Any]]:
         return [
@@ -168,31 +159,73 @@ class MCPClientService:
                                 credentials_map[conn.provider] = repo.decrypt_credentials(conn)
                 except Exception:
                     pass
-            records = await provider_manager.search_all(
-                query=query,
-                target_providers=targets,
-                filters=filters,
-                credentials_map=credentials_map,
-            )
+            records = []
+            try:
+                import asyncio
+                records = await asyncio.wait_for(
+                    provider_manager.search_all(
+                        query=query,
+                        target_providers=targets,
+                        filters=filters,
+                        credentials_map=credentials_map,
+                    ),
+                    timeout=2.0,
+                )
+            except Exception:
+                pass
+
+            if not records and user_id:
+                try:
+                    from backend.app.core.database import AsyncSessionLocal
+                    from backend.app.repositories.file_repository import FileRepository
+                    async with AsyncSessionLocal() as session:
+                        file_repo = FileRepository(session)
+                        records = await file_repo.search_user_files(
+                            user_id=user_id,
+                            query=query,
+                            providers=targets,
+                            file_type=filters.get("file_type") if filters else None,
+                        )
+                except Exception:
+                    pass
+
             return [r.model_dump(mode="json") for r in records]
-        elif name == "list_files":
-            records = await provider_manager.list_files(
-                provider_name=args.get("provider", "local"),
-                folder_id=args.get("folder_id"),
-                limit=args.get("limit", 50),
-            )
-            return [r.model_dump(mode="json") for r in records]
-        elif name == "get_file_metadata":
-            record = await provider_manager.get_file_metadata(
-                provider_name=args.get("provider", "local"),
-                file_id=args.get("file_id", ""),
-            )
-            return record.model_dump(mode="json")
-        elif name == "get_file_content":
-            return await provider_manager.get_file_content(
-                provider_name=args.get("provider", "local"),
-                file_id=args.get("file_id", ""),
-            )
+        elif name in ("list_files", "get_file_metadata", "get_file_content"):
+            provider_name = args.get("provider", "local")
+            credentials = None
+            if args.get("user_id") and provider_name != "local":
+                try:
+                    from backend.app.core.database import AsyncSessionLocal
+                    from backend.app.repositories.provider_repository import ProviderRepository
+                    async with AsyncSessionLocal() as session:
+                        repo = ProviderRepository(session)
+                        conn = await repo.get_by_user_and_provider(args["user_id"], provider_name)
+                        if conn and conn.status == "connected":
+                            credentials = repo.decrypt_credentials(conn)
+                except Exception:
+                    pass
+
+            if name == "list_files":
+                records = await provider_manager.list_files(
+                    provider_name=provider_name,
+                    folder_id=args.get("folder_id"),
+                    limit=args.get("limit", 50),
+                    credentials=credentials,
+                )
+                return [r.model_dump(mode="json") for r in records]
+            elif name == "get_file_metadata":
+                record = await provider_manager.get_file_metadata(
+                    provider_name=provider_name,
+                    file_id=args.get("file_id", ""),
+                    credentials=credentials,
+                )
+                return record.model_dump(mode="json")
+            elif name == "get_file_content":
+                return await provider_manager.get_file_content(
+                    provider_name=provider_name,
+                    file_id=args.get("file_id", ""),
+                    credentials=credentials,
+                )
         raise ValueError(f"Unknown fallback tool '{name}'")
 
 

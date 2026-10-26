@@ -19,9 +19,16 @@ MS_SCOPES = [
 
 class MicrosoftOAuthHandler:
     @staticmethod
+    def _get_tenant(current_settings) -> str:
+        # Default to 'common' to support personal Microsoft accounts (@outlook.com, @gmail.com) and org accounts
+        tenant = getattr(current_settings, "MICROSOFT_TENANT_ID", None)
+        return tenant if tenant else "common"
+
+    @staticmethod
     def get_authorization_url(state: str) -> str:
         current_settings = get_settings()
-        ms_auth_url = f"https://login.microsoftonline.com/{current_settings.MICROSOFT_TENANT_ID}/oauth2/v2.0/authorize"
+        tenant = MicrosoftOAuthHandler._get_tenant(current_settings)
+        ms_auth_url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize"
         params = {
             "client_id": current_settings.MICROSOFT_CLIENT_ID or "missing_microsoft_client_id",
             "response_type": "code",
@@ -35,7 +42,8 @@ class MicrosoftOAuthHandler:
     @staticmethod
     async def exchange_code_for_tokens(code: str) -> Dict[str, Any]:
         current_settings = get_settings()
-        ms_token_url = f"https://login.microsoftonline.com/{current_settings.MICROSOFT_TENANT_ID}/oauth2/v2.0/token"
+        tenant = MicrosoftOAuthHandler._get_tenant(current_settings)
+        ms_token_url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
         data = {
             "client_id": current_settings.MICROSOFT_CLIENT_ID,
             "client_secret": current_settings.MICROSOFT_CLIENT_SECRET,

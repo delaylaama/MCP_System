@@ -55,6 +55,17 @@ class FileRepository:
         res = await self.session.execute(stmt)
         return list(res.scalars().all())
 
+    async def get_provider_file_stats(self, user_id: str, provider: str) -> tuple:
+        from sqlalchemy import func
+        stmt = select(func.count(FileMetadata.id), func.coalesce(func.sum(FileMetadata.size), 0)).where(
+            FileMetadata.user_id == user_id,
+            FileMetadata.provider == provider,
+        )
+        res = await self.session.execute(stmt)
+        row = res.first()
+        return (int(row[0]), int(row[1])) if row else (0, 0)
+
+
     async def search_user_files(
         self,
         user_id: str,
