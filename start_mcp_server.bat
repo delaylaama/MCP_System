@@ -1,9 +1,11 @@
 @echo off
-title MCP Server (Port 8001)
+title FastMCP Protocol Server (Port 8001)
+color 0A
 cd /d "%~dp0"
 echo ===================================================
-echo Starting MCP Server on http://127.0.0.1:8001/mcp...
+echo Starting FastMCP Protocol Server...
+echo Endpoint: http://127.0.0.1:8001/mcp
 echo ===================================================
-call .\venv\Scripts\activate.bat
-python -m mcp_server.server
+set "PYTHONPATH=%~dp0"
+"%~dp0venv\Scripts\python.exe" -m mcp_server.server
 pause
