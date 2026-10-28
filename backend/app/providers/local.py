@@ -332,14 +332,52 @@ class LocalFileProvider(BaseProvider):
             or query_lower in ["*", "all", "all files", "local", "local storage", "local_storage", "local files"]
         )
 
-        # For wildcard queries, search local_storage root directly
-        search_dirs = [(self.root_path, 99)]
-        if not is_wildcard:
-            home = Path.home()
-            for folder_name in ["Downloads", "Documents", "Desktop"]:
-                folder_path = home / folder_name
-                if folder_path.exists() and folder_path.is_dir() and folder_path != self.root_path:
-                    search_dirs.append((folder_path, 2))
+        # Determine local directory roots to search across C: and D: drives
+        search_dirs = []
+        home = Path.home()
+        folder_target = (filters.get("folder") or "").lower().strip() if filters else ""
+
+        # 1. Targeted folder/drive if explicitly specified in query
+        if folder_target:
+            if "download" in folder_target:
+                p = home / "Downloads"
+                if p.exists():
+                    search_dirs.append((p, 4))
+            elif "document" in folder_target:
+                p = home / "Documents"
+                if p.exists():
+                    search_dirs.append((p, 4))
+            elif "desktop" in folder_target:
+                p = home / "Desktop"
+                if p.exists():
+                    search_dirs.append((p, 4))
+            elif "d:" in folder_target or "d drive" in folder_target or folder_target == "d":
+                p = Path("D:/")
+                if p.exists():
+                    search_dirs.append((p, 3))
+            elif "c:" in folder_target or "c drive" in folder_target or folder_target == "c":
+                for f_name in ["Downloads", "Documents", "Desktop"]:
+                    p = home / f_name
+                    if p.exists():
+                        search_dirs.append((p, 4))
+
+        # 2. General search: traverse standard user directories on C: drive, project storage, and D: drive
+        if not search_dirs:
+            # User profile primary folders on C: drive
+            for f_name in ["Downloads", "Documents", "Desktop"]:
+                f_path = home / f_name
+                if f_path.exists() and f_path.is_dir():
+                    search_dirs.append((f_path, 3))
+
+            # Project storage root
+            if self.root_path.exists():
+                search_dirs.append((self.root_path, 99))
+
+            # System drives (e.g. D:, E:)
+            for letter in ["D", "E"]:
+                d_path = Path(f"{letter}:/")
+                if d_path.exists():
+                    search_dirs.append((d_path, 2))
 
         results = []
         seen_paths = set()

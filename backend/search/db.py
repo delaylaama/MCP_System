@@ -211,7 +211,11 @@ class SearchDatabase:
             return
         try:
             # Delete any existing entries for this file_id
-            self._text_table.delete(f'file_id = "{file_id}"')
+            try:
+                clean_fid = file_id.replace("'", "''")
+                self._text_table.delete(f"file_id = '{clean_fid}'")
+            except Exception:
+                pass
             if chunks_with_vectors:
                 records = [
                     {
@@ -233,7 +237,11 @@ class SearchDatabase:
         if not self._image_table:
             return
         try:
-            self._image_table.delete(f'file_id = "{file_id}"')
+            try:
+                clean_fid = file_id.replace("'", "''")
+                self._image_table.delete(f"file_id = '{clean_fid}'")
+            except Exception:
+                pass
             self._image_table.add([{"file_id": file_id, "vector": vector}])
         except Exception as e:
             logger.warning(f"Error saving image vector for {file_id}: {e}")

@@ -129,8 +129,10 @@ class SearchService:
                     for r in img_results:
                         fid = r.get("file_id")
                         dist = r.get("_distance", 1.0)
-                        sim = max(0.0, min(1.0, 1.0 - (dist / 2.0)))
-                        if fid:
+                        # Zero-shot CLIP ViT-B/32 cosine similarity calibration
+                        cos_sim = max(0.0, 1.0 - (dist / 2.0))
+                        sim = max(0.0, min(1.0, (cos_sim - 0.15) / 0.18))
+                        if fid and sim >= 0.25:
                             prev = semantic_scores.get(fid, 0.0)
                             semantic_scores[fid] = max(prev, round(sim, 4))
                             clean_id = fid.removeprefix("local_").removeprefix("fixture_")
@@ -147,6 +149,34 @@ class SearchService:
                         semantic_scores[k] = v
             except Exception:
                 pass
+
+        # 2.4 Hydrate high-scoring vector matches from LanceDB / SQLite into candidate_records
+        try:
+            from backend.search.db import db as local_search_db
+            existing_ids = {c.id for c in candidate_records}
+            existing_names = {c.name.lower() for c in candidate_records}
+            for fid, score in semantic_scores.items():
+                if score >= 0.35 and fid not in existing_ids:
+                    f_info = local_search_db.get_file(fid)
+                    if not f_info and fid.startswith("local_"):
+                        f_info = local_search_db.get_file(fid.removeprefix("local_"))
+                    if f_info and f_info.get("id") not in existing_ids and f_info.get("name", "").lower() not in existing_names:
+                        rec = FileRecord(
+                            id=f_info["id"],
+                            provider=f_info.get("source", "local"),
+                            provider_file_id=f_info.get("path", f_info["id"]),
+                            name=f_info["name"],
+                            path=f_info.get("path", f"/{f_info['name']}"),
+                            mime_type=f_info.get("mime") or "application/octet-stream",
+                            extension=f_info.get("ext") or "",
+                            size=f_info.get("size", 0),
+                        )
+                        candidate_records.append(rec)
+                        existing_ids.add(rec.id)
+                        existing_ids.add(f_info["id"])
+                        existing_names.add(rec.name.lower())
+        except Exception as e:
+            logger.warning(f"Error hydrating vector search candidates: {e}")
 
         # 3. Apply Multi-Factor Ranking Engine
         ranked_results = ranking_service.rank_results(

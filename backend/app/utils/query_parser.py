@@ -122,12 +122,16 @@ PROVIDER_PATTERNS = [
     (re.compile(r"\b(?:in|on|from|across|inside)?\s*(?:my\s*)?gdrive\b", re.IGNORECASE), "google_drive"),
     (re.compile(r"\b(?:in|on|from|across|inside)?\s*(?:my\s*)?one[\s_-]?drive\b", re.IGNORECASE), "onedrive"),
     (re.compile(r"\b(?:in|on|from|across|inside)?\s*(?:my\s*)?dropbox\b", re.IGNORECASE), "dropbox"),
-    (re.compile(r"\b(?:in|on|from|across|inside)?\s*(?:my\s*)?(?:local[\s_-]?(?:drive|disk|storage)?|this drive|pc|system|local)\b", re.IGNORECASE), "local"),
+    (re.compile(r"\b(?:in|on|from|across|inside)?\s*(?:my\s*)?(?:[c-zC-Z]\s*(?:drive|disk|storage)|[c-zC-Z]:[\\\/]?)\b", re.IGNORECASE), "local"),
+    (re.compile(r"\b(?:in|on|from|across|inside)?\s*(?:my\s*)?(?:local[\s_-]?(?:drive|disk|storage)?|this drive|pc|system|local|hard[\s_-]?drive)\b", re.IGNORECASE), "local"),
 ]
 
 FOLDER_PATTERNS = [
-    re.compile(r"\b(?:in|inside|under|from)\s+(?:the\s+)?(?:folder|directory|path|subfolder)\s+['\"]?([a-zA-Z0-9_\-\.\/]+)['\"]?", re.IGNORECASE),
-    re.compile(r"\b(?:folder|directory|path):\s*['\"]?([a-zA-Z0-9_\-\.\/]+)['\"]?", re.IGNORECASE),
+    re.compile(r"\b(?:in|inside|under|from)\s+(?:the\s+)?(?:folder|directory|path|subfolder)\s+['\"]?([a-zA-Z0-9_\-\.\/\\:]+)['\"]?", re.IGNORECASE),
+    re.compile(r"\b(?:folder|directory|path):\s*['\"]?([a-zA-Z0-9_\-\.\/\\:]+)['\"]?", re.IGNORECASE),
+    re.compile(r"\b(?:in|inside|under|from)\s+(?:the\s+)?(downloads|documents|desktop|pictures|videos|music)(?:\s*(?:folder|directory))?\b", re.IGNORECASE),
+    re.compile(r"\b(?:in|inside|under|from|on)\s+([c-zC-Z]:[\\\/]?|[c-zC-Z]\s*(?:drive|disk))\b", re.IGNORECASE),
+    re.compile(r"\b(downloads|documents|desktop)\b", re.IGNORECASE),
 ]
 
 FILE_TYPE_PATTERNS = [
@@ -161,6 +165,14 @@ def parse_natural_language_query(query: str) -> dict:
     detected_folder = None
     detected_type = None
 
+    # Clean out conversational preamble phrases like "there are", "i feel like", "can you find"
+    conv_paterns = [
+        re.compile(r"\b(?:there\s+are|there\s+is|i\s+have|i\s+feel\s+like|can\s+you\s+find|please\s+find|search\s+for|look\s+for|find|show\s+me|get|list|display)\b", re.IGNORECASE),
+        re.compile(r"\b(?:is\s+being\s+searched|are\s+being\s+searched|not\s+working|working)\b", re.IGNORECASE),
+    ]
+    for cp in conv_paterns:
+        q_work = cp.sub(" ", q_work)
+
     # 1. Detect target storage provider
     for pat, p_id in PROVIDER_PATTERNS:
         match = pat.search(q_work)
@@ -175,6 +187,8 @@ def parse_natural_language_query(query: str) -> dict:
         if match:
             detected_folder = match.group(1).strip()
             q_work = pat.sub(" ", q_work)
+            if not detected_provider and any(k in detected_folder.lower() for k in ["download", "document", "desktop", "c:", "d:", "c drive", "d drive"]):
+                detected_provider = "local"
             break
 
     # 3. Detect file type
@@ -186,7 +200,7 @@ def parse_natural_language_query(query: str) -> dict:
 
     # 4. Clean keywords without carrier verbs or provider tokens
     terms = extract_terms(q_work, keep_recency=False)
-    provider_words = {"google", "drive", "gdrive", "onedrive", "dropbox", "local", "disk", "pc", "folder", "directory"}
+    provider_words = {"google", "drive", "gdrive", "onedrive", "dropbox", "local", "disk", "pc", "folder", "directory", "c", "d", "e", "downloads", "documents", "desktop"}
     final_terms = [t for t in terms if t.lower() not in provider_words]
     clean_target = " ".join(final_terms) if final_terms else clean_query_text(q_work)
 
