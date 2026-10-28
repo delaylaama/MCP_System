@@ -141,7 +141,7 @@ async def list_admin_users(db: AsyncSession = Depends(get_db)):
     return [
         AdminUserResponse(
             id=u.id,
-            username=u.username,
+            username=u.full_name or (u.email.split("@")[0] if u.email else "User"),
             email=u.email,
             full_name=u.full_name,
             is_active=u.is_active,
@@ -164,7 +164,7 @@ async def toggle_user_status(user_id: str, db: AsyncSession = Depends(get_db)):
     user.is_active = not user.is_active
     await db.commit()
     await db.refresh(user)
-    return {"user_id": user.id, "is_active": user.is_active}
+    return {"id": user.id, "is_active": user.is_active}
 
 
 @router.get("/index-status")

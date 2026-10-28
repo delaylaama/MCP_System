@@ -83,7 +83,14 @@ class DropboxProvider(BaseProvider):
 
             if filters and filters.get("file_type"):
                 ext = filters["file_type"].lower().lstrip(".")
-                results = [r for r in results if r.name.lower().endswith(f".{ext}")]
+                image_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
+                if ext in ["image", "images", "photo", "photos", "picture", "pictures"]:
+                    results = [r for r in results if any(r.name.lower().endswith(e) for e in image_exts)]
+                elif ext in ["document", "documents", "doc", "docs"]:
+                    doc_exts = {".pdf", ".docx", ".doc", ".txt", ".md"}
+                    results = [r for r in results if any(r.name.lower().endswith(e) for e in doc_exts)]
+                else:
+                    results = [r for r in results if r.name.lower().endswith(f".{ext}")]
 
             return results
         except Exception as e:

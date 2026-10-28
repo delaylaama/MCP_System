@@ -107,11 +107,11 @@ def compute_term_match(terms: List[str], text: str) -> Tuple[bool, float]:
     if len(terms) == 1:
         is_hit = matched_count >= 1
     elif len(terms) == 2:
-        # For 2-term queries (like 'final draft'), require both terms or exact phrase
-        is_hit = matched_count >= 2
+        # For 2-term queries (like 'thejas aadhar' or 'final draft'), match if at least 1 term matches (coverage >= 0.50)
+        is_hit = matched_count >= 1 and coverage >= 0.50
     else:
-        # 3 or more terms: require at least 66% coverage (e.g. 2 out of 3, 3 out of 4)
-        is_hit = coverage >= 0.60
+        # 3 or more terms: require at least 40% coverage (e.g. 1 out of 3 with prefix/token match, 2 out of 4)
+        is_hit = coverage >= 0.40
 
     return is_hit, coverage
 

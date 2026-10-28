@@ -375,7 +375,20 @@ class LocalFileProvider(BaseProvider):
 
                     if file_type_filter:
                         clean_ext = file_type_filter.lower().lstrip(".")
-                        if not file_name.lower().endswith(f".{clean_ext}"):
+                        image_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg", ".tiff"}
+                        doc_exts = {".pdf", ".docx", ".doc", ".txt", ".rtf", ".odt", ".md"}
+                        sheet_exts = {".xlsx", ".xls", ".csv"}
+                        fn_ext = Path(file_name).suffix.lower()
+                        if clean_ext in ["image", "images", "photo", "photos", "picture", "pictures"]:
+                            if fn_ext not in image_exts:
+                                continue
+                        elif clean_ext in ["document", "documents", "doc", "docs"]:
+                            if fn_ext not in doc_exts:
+                                continue
+                        elif clean_ext in ["sheet", "sheets", "spreadsheet", "spreadsheets"]:
+                            if fn_ext not in sheet_exts:
+                                continue
+                        elif not file_name.lower().endswith(f".{clean_ext}"):
                             continue
 
                     q_compact = re.sub(r"[^a-z0-9]", "", query_lower)

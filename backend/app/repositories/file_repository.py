@@ -78,12 +78,30 @@ class FileRepository:
         import re
         import difflib
 
+        from sqlalchemy import or_
+        from backend.app.models.user import User
+
         stmt = select(FileMetadata).where(FileMetadata.user_id == user_id)
         if providers:
             stmt = stmt.where(FileMetadata.provider.in_(providers))
         if file_type:
             clean_type = file_type.lower().lstrip(".")
-            stmt = stmt.where(FileMetadata.extension == f".{clean_type}")
+            image_exts = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg", ".tiff"]
+            doc_exts = [".pdf", ".docx", ".doc", ".txt", ".rtf", ".odt", ".md"]
+            sheet_exts = [".xlsx", ".xls", ".csv"]
+            if clean_type in ["image", "images", "photo", "photos", "picture", "pictures"]:
+                stmt = stmt.where(
+                    or_(
+                        FileMetadata.extension.in_(image_exts),
+                        FileMetadata.mime_type.like("image/%"),
+                    )
+                )
+            elif clean_type in ["document", "documents", "doc", "docs"]:
+                stmt = stmt.where(FileMetadata.extension.in_(doc_exts))
+            elif clean_type in ["sheet", "sheets", "spreadsheet", "spreadsheets"]:
+                stmt = stmt.where(FileMetadata.extension.in_(sheet_exts))
+            else:
+                stmt = stmt.where(FileMetadata.extension == f".{clean_type}")
 
         res = await self.session.execute(stmt)
         records = res.scalars().all()
@@ -94,6 +112,22 @@ class FileRepository:
         query_distilled = clean_query_text(query)
         is_wildcard = not query or query.strip() in ["*", "all", "all files"]
 
+        # Check if query references the user's name or identity
+        user_names = []
+        try:
+            u_res = await self.session.execute(select(User).where(User.id == user_id))
+            user_obj = u_res.scalars().first()
+            if user_obj:
+                if user_obj.full_name:
+                    user_names.extend([w.lower() for w in re.split(r"[\s_\-]+", user_obj.full_name) if len(w) >= 3])
+                if user_obj.email:
+                    user_names.append(user_obj.email.split("@")[0].lower())
+        except Exception:
+            pass
+
+        is_user_identity_query = any(un in query_terms or un in query_distilled.split() for un in user_names)
+        identity_doc_keywords = {"aadhar", "aadhaar", "pan", "passport", "voter", "id", "identity", "photo", "profile", "receipt", "fees", "resume", "cv", "certificate"}
+
         matched: List[FileRecord] = []
         for r in records:
             name_lower = r.name.lower()
@@ -103,6 +137,8 @@ class FileRepository:
             if is_wildcard:
                 hit = True
             elif query_distilled and (query_distilled in name_lower or query_distilled in path_lower):
+                hit = True
+            elif is_user_identity_query and any(k in name_lower for k in identity_doc_keywords):
                 hit = True
             else:
                 is_term_hit, coverage = compute_term_match(query_terms, f"{name_lower} {path_lower}")

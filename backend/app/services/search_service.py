@@ -119,7 +119,27 @@ class SearchService:
             except Exception as e:
                 logger.warning(f"LanceDB semantic vector search error: {e}")
 
-            # 2.2 ChromaDB fallback
+            # 2.2 LanceDB CLIP image vector retrieval (Cross-modal visual search)
+            try:
+                from backend.search.models import model_manager
+                from backend.search.db import db as local_search_db
+                clip_vec = model_manager.embed_clip_text(clean_q or request.query)
+                if clip_vec:
+                    img_results = local_search_db.search_image_vectors(clip_vec, limit=50)
+                    for r in img_results:
+                        fid = r.get("file_id")
+                        dist = r.get("_distance", 1.0)
+                        sim = max(0.0, min(1.0, 1.0 - (dist / 2.0)))
+                        if fid:
+                            prev = semantic_scores.get(fid, 0.0)
+                            semantic_scores[fid] = max(prev, round(sim, 4))
+                            clean_id = fid.removeprefix("local_").removeprefix("fixture_")
+                            semantic_scores[clean_id] = max(semantic_scores.get(clean_id, 0.0), round(sim, 4))
+                            semantic_scores[f"local_{clean_id}"] = max(semantic_scores.get(f"local_{clean_id}", 0.0), round(sim, 4))
+            except Exception as e:
+                logger.warning(f"LanceDB CLIP image vector search error: {e}")
+
+            # 2.3 ChromaDB fallback
             try:
                 chroma_scores = semantic_search_service.semantic_query(clean_q or request.query, top_k=50)
                 for k, v in chroma_scores.items():

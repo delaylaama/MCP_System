@@ -102,7 +102,14 @@ class GoogleDriveProvider(BaseProvider):
 
             if filters and filters.get("file_type"):
                 ext = filters["file_type"].lower().lstrip(".")
-                query_clauses.append(f"name contains '.{ext}'")
+                if ext in ["image", "images", "photo", "photos", "picture", "pictures"]:
+                    query_clauses.append("(mimeType contains 'image/' or name contains '.jpg' or name contains '.jpeg' or name contains '.png' or name contains '.webp')")
+                elif ext in ["document", "documents", "doc", "docs"]:
+                    query_clauses.append("(mimeType contains 'pdf' or mimeType contains 'document' or name contains '.pdf' or name contains '.docx' or name contains '.doc')")
+                elif ext in ["sheet", "sheets", "spreadsheet", "spreadsheets"]:
+                    query_clauses.append("(mimeType contains 'spreadsheet' or name contains '.xlsx' or name contains '.csv')")
+                else:
+                    query_clauses.append(f"name contains '.{ext}'")
 
             final_q = " and ".join(query_clauses)
             fields = "files(id, name, mimeType, size, modifiedTime, webViewLink, md5Checksum)"
